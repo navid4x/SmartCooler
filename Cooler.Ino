@@ -119,7 +119,7 @@ const unsigned long TEMP_INTERVAL =
 unsigned long lastTimeCheck = 0;
 
 const unsigned long TIME_CHECK_INTERVAL =
-  30000UL;
+  10000UL;
 
 // -------------------- HELPERS --------------------
 
@@ -1014,7 +1014,7 @@ Fast
 </a>
 
 <a href="/auto/on"
-class="btn auto"
+class="btn"
 id="autoBtn">
 Auto
 </a>
@@ -1131,52 +1131,120 @@ class="status">
 
 <script>
 
+function updateButton(
+  id,
+  state,
+  onUrl,
+  offUrl)
+{
+  let btn =
+    document.getElementById(id);
+
+  if(!btn)
+    return;
+
+  if(state)
+  {
+    btn.classList.add("on");
+    btn.href = offUrl;
+  }
+  else
+  {
+    btn.classList.remove("on");
+    btn.href = onUrl;
+  }
+}
+
 async function refreshData()
 {
- try
- {
-   let s =
-   await fetch('/status');
+  try
+  {
+    let res =
+      await fetch(
+        '/status?t=' +
+        Date.now());
 
-   let j =
-   await s.json();
+    let j =
+      await res.json();
 
-   document
-   .getElementById("temp")
-   .innerHTML =
-   j.temp + " °C";
+    document
+      .getElementById("temp")
+      .innerHTML =
+      j.temp + " °C";
 
-   document
-   .getElementById("clock")
-   .innerHTML =
-   j.clock;
+    document
+      .getElementById("clock")
+      .innerHTML =
+      j.clock;
 
-   document
-   .getElementById("status")
-   .innerHTML =
-   "Pump: "
-   + j.pump
-   + "<br>"
-   + "Slow: "
-   + j.slow
-   + "<br>"
-   + "Fast: "
-   + j.fast
-   + "<br>"
-   + "Auto: "
-   + j.autoEnabled
-   + "<br>"
-   + "Schedule: "
-   + j.scheduleEnabled;
- }
- catch(e)
- {
- }
+    updateButton(
+      "pumpBtn",
+      j.pump,
+      "/pump/on",
+      "/pump/off");
+
+    updateButton(
+      "slowBtn",
+      j.slow,
+      "/slow/on",
+      "/slow/off");
+
+    updateButton(
+      "fastBtn",
+      j.fast,
+      "/fast/on",
+      "/fast/off");
+
+    updateButton(
+      "autoBtn",
+      j.autoEnabled,
+      "/auto/on",
+      "/auto/off");
+
+    let txt = "";
+
+    txt +=
+      "Pump: "
+      + (j.pump ? "ON":"OFF");
+
+    txt += "<br>";
+
+    txt +=
+      "Slow: "
+      + (j.slow ? "ON":"OFF");
+
+    txt += "<br>";
+
+    txt +=
+      "Fast: "
+      + (j.fast ? "ON":"OFF");
+
+    txt += "<br>";
+
+    txt +=
+      "Auto: "
+      + (j.autoEnabled ? "ON":"OFF");
+
+    txt += "<br>";
+
+    txt +=
+      "Schedule: "
+      + (j.scheduleEnabled ? "ON":"OFF");
+
+    document
+      .getElementById("status")
+      .innerHTML =
+      txt;
+  }
+  catch(e)
+  {
+    console.log(e);
+  }
 }
 
 setInterval(
-refreshData,
-3000);
+  refreshData,
+  1000);
 
 refreshData();
 
@@ -1219,31 +1287,20 @@ void handleStatus()
   json += getClockString();
   json += "\"";
 
-  json += ",\"pump\":\"";
-  json += (pumpState ? "ON":"OFF");
-  json += "\"";
+  json += ",\"pump\":";
+  json += (pumpState ? "true" : "false");
 
-  json += ",\"slow\":\"";
-  json += (slowState ? "ON":"OFF");
-  json += "\"";
+  json += ",\"slow\":";
+  json += (slowState ? "true" : "false");
 
-  json += ",\"fast\":\"";
-  json += (fastState ? "ON":"OFF");
-  json += "\"";
+  json += ",\"fast\":";
+  json += (fastState ? "true" : "false");
 
-  json += ",\"autoEnabled\":\"";
-  json +=
-      (settings.autoEnabled
-       ? "ON"
-       : "OFF");
-  json += "\"";
+  json += ",\"autoEnabled\":";
+  json += (settings.autoEnabled ? "true" : "false");
 
-  json += ",\"scheduleEnabled\":\"";
-  json +=
-      (settings.scheduleEnabled
-       ? "ON"
-       : "OFF");
-  json += "\"";
+  json += ",\"scheduleEnabled\":";
+  json += (settings.scheduleEnabled ? "true" : "false");
 
   json += "}";
 
