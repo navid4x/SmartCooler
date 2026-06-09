@@ -89,8 +89,7 @@ AutoState autoState = AUTO_IDLE;
 
 unsigned long autoPumpStartMillis = 0;
 
-const unsigned long PUMP_PREWET_TIME =
-  15UL * 60UL * 1000UL;
+const unsigned long PUMP_PREWET_TIME =15UL * 60UL * 1000UL;
 
 // -------------------- SCHEDULE ENGINE --------------------
 
@@ -105,21 +104,18 @@ ScheduleState scheduleState = SCH_IDLE;
 
 unsigned long schedulePumpStartMillis = 0;
 unsigned long schedulePumpEndTime = 0;
-bool scheduleRunningToday = false;
 
 // -------------------- SENSOR TIMER --------------------
 
 unsigned long lastTempRead = 0;
 
-const unsigned long TEMP_INTERVAL =
-  60000UL;
+const unsigned long TEMP_INTERVAL = 60000UL;
 
 // -------------------- NTP TIMER --------------------
 
 unsigned long lastTimeCheck = 0;
 
-const unsigned long TIME_CHECK_INTERVAL =
-  3600000UL;
+const unsigned long TIME_CHECK_INTERVAL = 3600000UL;
 
 // -------------------- HELPERS --------------------
 
@@ -184,18 +180,7 @@ void loadSettings()
   if (crcOfData != settings.crc)
   {
     settings.scheduleEnabled = false;
-
-    settings.startHour = 14;
-    settings.startMinute = 30;
-
-    settings.stopHour = 18;
-    settings.stopMinute = 45;
-
     settings.autoEnabled = false;
-
-    settings.autoMaxTemp = 26;
-    settings.autoMinTemp = 24;
-
     saveSettings();
   }
 }
@@ -238,7 +223,6 @@ void allOff()
 
 // -------------------- SENSOR --------------------
 
-// متغیرهای جدید (در بالای فایل، کنار سایر متغیرها)
 unsigned long lastTempRequest = 0;
 bool tempRequestPending = false;
 
@@ -246,10 +230,9 @@ void updateTemperature()
 {
   unsigned long now = millis();
 
-  // اگر درخواستی در جریان نیست و زمان رسیده
   if (!tempRequestPending && (now - lastTempRead >= TEMP_INTERVAL))
   {
-    sensors.requestTemperatures();        // شروع تبدیل (غیر بلوکینگ)
+    sensors.requestTemperatures(); 
     tempRequestPending = true;
     lastTempRequest = now;
     return;
@@ -262,7 +245,7 @@ void updateTemperature()
     if (t != DEVICE_DISCONNECTED_C)
       currentTemp = t;
     tempRequestPending = false;
-    lastTempRead = now;  // زمان آخرین خواندن موفق
+    lastTempRead = now;
   }
 }
 
@@ -345,7 +328,7 @@ void connectWiFi()
 
   while (WiFi.status() != WL_CONNECTED)
   {
-    delay(500);
+    delay(1000);
   }
 }
 
@@ -454,9 +437,6 @@ void processAuto()
     return;
   }
 
-  // اگر Schedule فعال است
-  // Auto فقط داخل بازه زمانی اجازه کار دارد
-
   if (settings.scheduleEnabled)
   {
     if (!isInsideSchedule())
@@ -518,11 +498,9 @@ void scheduleStartPumping()
 {
   relayPump(true);
 
-  schedulePumpStartMillis =
-      millis();
+  schedulePumpStartMillis = millis();
 
-  scheduleState =
-      SCH_PUMPING;
+  scheduleState = SCH_PUMPING;
 }
 
 void scheduleStartCooling()
@@ -530,8 +508,7 @@ void scheduleStartCooling()
   relayPump(true);
   relaySlow(true);
 
-  scheduleState =
-      SCH_RUNNING;
+  scheduleState = SCH_RUNNING;
 }
 
 void processSchedule()
@@ -541,9 +518,6 @@ void processSchedule()
     scheduleState = SCH_IDLE;
     return;
   }
-
-  // اگر Auto فعال باشد
-  // Auto اولویت دارد
 
   if (settings.autoEnabled)
   {
@@ -561,12 +535,7 @@ void processSchedule()
 
   int stopM = getStopMinutes();
 
-  //
-  // خارج از بازه
-  //
-
-  if (nowM < startM ||
-      nowM >= stopM)
+  if (nowM < startM || nowM >= stopM)
   {
     if (scheduleState != SCH_IDLE)
     {
@@ -576,12 +545,7 @@ void processSchedule()
     return;
   }
 
-  //
-  // داخل بازه
-  //
-
-  int passedMinutes =
-      nowM - startM;
+  int passedMinutes = nowM - startM;
 
   switch (scheduleState)
   {
@@ -601,32 +565,6 @@ case SCH_PUMPING:
 
       break;
   }
-}
-
-//
-// =====================================================
-// CLOCK JSON
-// =====================================================
-//
-
-String getClockString()
-{
-  struct tm timeinfo;
-
-  if (!getLocalTimeNow(timeinfo))
-  {
-    return "--:--";
-  }
-
-  char buf[16];
-
-  sprintf(
-      buf,
-      "%02d:%02d",
-      timeinfo.tm_hour,
-      timeinfo.tm_min);
-
-  return String(buf);
 }
 
 //
@@ -781,7 +719,7 @@ void handleScheduleOff()
 const char MAIN_PAGE[] PROGMEM = R"rawliteral(
 
 <!DOCTYPE html>
-<html lang="fa" dir="rtl">
+<html>
 
 <head>
 
@@ -857,25 +795,42 @@ body
  margin-bottom:10px;
 }
 
-.clock
+.temp
 {
  text-align:center;
  font-size:42px;
  font-weight:bold;
+ padding: 10px;
 }
+.time-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+    gap: 15px; 
+  }
 
-.temp
-{
- text-align:center;
- font-size:34px;
- margin-top:10px;
-}
+  .time-row label {
+    min-width: 100px; 
+    font-weight: 500;
+  }
+
+   .time-inputs {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+    .separator {
+    font-weight: bold;
+    font-size: 1.2em;
+    color: #555;
+  }
 
 .grid
 {
  display:grid;
- grid-template-columns:1fr 1fr;
- gap:10px;
+ gap: 15px;
+ padding: 20px;
 }
 
 .btn
@@ -911,10 +866,12 @@ body
 {
  margin-bottom:10px;
  font-size:18px;
+ font-weight: 600;
 }
 
 .input
 {
+ text-align: center;
  width:100%;
  padding:12px;
  border:none;
@@ -957,33 +914,15 @@ body
 
 <div class="card">
 
-<div class="title">
-SMART COOLER
-</div>
-
-<div
-id="clock"
-class="clock">
---:--
-</div>
-
 <div
 id="temp"
 class="temp">
 --.- °C
 </div>
 
-<div class="small">
-ESP8266 Controller
-</div>
-
 </div>
 
 <div class="card">
-
-<div class="section">
-کنترل دستی
-</div>
 
 <div class="grid">
 
@@ -1021,50 +960,32 @@ Auto
 <div class="card">
 
 <div class="section">
-زمان بندی
+Scheduling
 </div>
 
 <form action="/saveSchedule">
 
-<label>
-شروع
-</label>
+<div class="time-row">
+      <label>Start Time</label>
+      <div class="time-inputs">
+        <input name="sh" type="number" class="input" min="0" max="23" placeholder="Hour">
+        <span class="separator">:</span>
+        <input name="sm" type="number" class="input" min="0" max="59" placeholder="min">
+      </div>
+    </div>
 
-<input
-name="sh"
-type="number"
-class="input"
-min="0"
-max="23">
-
-<input
-name="sm"
-type="number"
-class="input"
-min="0"
-max="59">
-
-<label>
-پایان
-</label>
-
-<input
-name="eh"
-type="number"
-class="input"
-min="0"
-max="23">
-
-<input
-name="em"
-type="number"
-class="input"
-min="0"
-max="59">
+    <div class="time-row">
+      <label>End Time</label>
+      <div class="time-inputs">
+        <input name="eh" type="number" class="input" min="0" max="23" placeholder="Hour">
+        <span class="separator">:</span>
+        <input name="em" type="number" class="input" min="0" max="59" placeholder="min">
+      </div>
+    </div>
 
 <button
 class="save">
-ذخیره
+Save
 </button>
 
 </form>
@@ -1074,182 +995,30 @@ class="save">
 <div class="card">
 
 <div class="section">
-تنظیمات Auto
+Auto
 </div>
 
 <form action="/saveAuto">
+<div class="time-row">
+<label>Max Tempreture</label>
+<div class="time-inputs">
 
-<label>
-حداکثر دما
-</label>
-
-<input
-name="max"
-type="number"
-step="0.1"
-class="input">
-
-<label>
-حداقل دما
-</label>
-
-<input
-name="min"
-type="number"
-step="0.1"
-class="input">
-
-<button
-class="save">
-ذخیره
+<input name="max" type="number" step="0.1" class="input" style="max-width: 100PX">
+</div>
+</div>
+<div class="time-row">
+<label>Min Tempreture</label>
+<div class="time-inputs">
+<input name="min" type="number" step="0.1" class="input" style="max-width: 100PX">
+</div>
+</div>
+<button class="save">
+Save
 </button>
 
 </form>
 
 </div>
-
-<div class="card">
-
-<div class="section">
-وضعیت سیستم
-</div>
-
-<div
-id="status"
-class="status">
-در حال بارگذاری...
-</div>
-
-</div>
-
-</div>
-
-<script>
-
-function updateButton(
-  id,
-  state,
-  onUrl,
-  offUrl) 
-{
-  let btn =
-    document.getElementById(id);
-
-  if(!btn)
-    return;
-
-  if(state)
-  {
-    btn.classList.add("on");
-    btn.href = offUrl;
-  }
-  else
-  {
-    btn.classList.remove("on");
-    btn.href = onUrl;
-  }
-}
-
-async function refreshData()
-{
-  try
-  {
-    let res =
-      await fetch(
-        '/status?t=' +
-        Date.now());
-
-    let j =
-      await res.json();
-
-    document
-      .getElementById("temp")
-      .innerHTML =
-      j.temp + " °C";
-
-    document
-      .getElementById("clock")
-      .innerHTML =
-      j.clock;
-
-    updateButton(
-      "pumpBtn",
-      j.pump,
-      "/pump/on",
-      "/pump/off");
-
-    updateButton(
-      "slowBtn",
-      j.slow,
-      "/slow/on",
-      "/slow/off");
-
-    updateButton(
-      "fastBtn",
-      j.fast,
-      "/fast/on",
-      "/fast/off");
-
-    updateButton(
-      "autoBtn",
-      j.autoEnabled,
-      "/auto/on",
-      "/auto/off");
-      
-        updateButton(
-  "scheduleBtn",
-  j.scheduleEnabled,
-  "/schedule/on",
-  "/schedule/off");
-
-    let txt = "";
-
-    txt +=
-      "Pump: "
-      + (j.pump ? "ON":"OFF");
-
-    txt += "<br>";
-
-    txt +=
-      "Slow: "
-      + (j.slow ? "ON":"OFF");
-
-    txt += "<br>";
-
-    txt +=
-      "Fast: "
-      + (j.fast ? "ON":"OFF");
-
-    txt += "<br>";
-
-    txt +=
-      "Auto: "
-      + (j.autoEnabled ? "ON":"OFF");
-
-    txt += "<br>";
-
-    txt +=
-      "Schedule: "
-      + (j.scheduleEnabled ? "ON":"OFF");
-
-    document
-      .getElementById("status")
-      .innerHTML =
-      txt;
-  }
-  catch(e)
-  {
-    console.log(e);
-  }
-}
-
-setInterval(
-  refreshData,
-  1000);
-
-refreshData();
-
-</script>
 
 </body>
 
@@ -1271,49 +1040,7 @@ void handleRoot()
       MAIN_PAGE);
 }
 
-//
-// =====================================================
-// STATUS API
-// =====================================================
-//
 
-void handleStatus()
-{
-  String json = "{";
-
-  json += "\"temp\":";
-  json += String(currentTemp,1);
-
-  json += ",\"clock\":\"";
-  json += getClockString();
-  json += "\"";
-
-  json += ",\"pump\":";
-  json += (pumpState ? "true" : "false");
-
-  json += ",\"slow\":";
-  json += (slowState ? "true" : "false");
-
-  json += ",\"fast\":";
-  json += (fastState ? "true" : "false");
-
-  json += ",\"autoEnabled\":";
-  json += (settings.autoEnabled ? "true" : "false");
-
-  json += ",\"scheduleEnabled\":";
-  json += (settings.scheduleEnabled ? "true" : "false");
-
-  json += "}";
-  
-server.sendHeader(
-  "Cache-Control",
-  "no-store"
-);
-  server.send(
-      200,
-      "application/json",
-      json);
-}
 
 //
 // =====================================================
@@ -1403,10 +1130,6 @@ void initRoutes()
   server.on(
       "/",
       handleRoot);
-
-  server.on(
-      "/status",
-      handleStatus);
 
   server.on(
       "/pump/on",
@@ -1567,15 +1290,9 @@ void loop()
 
   processSchedule();
 
-  if(
-      millis()
-      -
-      lastTimeCheck
-      >
-      TIME_CHECK_INTERVAL)
+  if(millis() - lastTimeCheck > TIME_CHECK_INTERVAL)
   {
-    lastTimeCheck =
-      millis();
+    lastTimeCheck = millis();
 
     syncBackupServers();
   }
