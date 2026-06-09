@@ -1,11 +1,11 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPUpdateServer.h>
+#include <ESP8266mDNS.h>
 #include <EEPROM.h>
-
+#include <LittleFS.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-
 #include <time.h>
 
 #define ONE_WIRE_BUS 4
@@ -104,7 +104,7 @@ enum ScheduleState
 ScheduleState scheduleState = SCH_IDLE;
 
 unsigned long schedulePumpStartMillis = 0;
-
+unsigned long schedulePumpEndTime = 0;
 bool scheduleRunningToday = false;
 
 // -------------------- SENSOR TIMER --------------------
@@ -112,14 +112,14 @@ bool scheduleRunningToday = false;
 unsigned long lastTempRead = 0;
 
 const unsigned long TEMP_INTERVAL =
-  10000UL;
+  60000UL;
 
 // -------------------- NTP TIMER --------------------
 
 unsigned long lastTimeCheck = 0;
 
 const unsigned long TIME_CHECK_INTERVAL =
-  10000UL;
+  3600000UL;
 
 // -------------------- HELPERS --------------------
 
@@ -238,24 +238,31 @@ void allOff()
 
 // -------------------- SENSOR --------------------
 
+// متغیرهای جدید (در بالای فایل، کنار سایر متغیرها)
+unsigned long lastTempRequest = 0;
+bool tempRequestPending = false;
+
 void updateTemperature()
 {
-  if (millis() - lastTempRead <
-      TEMP_INTERVAL)
+  unsigned long now = millis();
+
+  // اگر درخواستی در جریان نیست و زمان رسیده
+  if (!tempRequestPending && (now - lastTempRead >= TEMP_INTERVAL))
   {
+    sensors.requestTemperatures();        // شروع تبدیل (غیر بلوکینگ)
+    tempRequestPending = true;
+    lastTempRequest = now;
     return;
   }
 
-  lastTempRead = millis();
 
-  sensors.requestTemperatures();
-
-  float t =
-      sensors.getTempCByIndex(0);
-
-  if (t != DEVICE_DISCONNECTED_C)
+  if (tempRequestPending && (now - lastTempRequest >= 800))
   {
-    currentTemp = t;
+    float t = sensors.getTempCByIndex(0);
+    if (t != DEVICE_DISCONNECTED_C)
+      currentTemp = t;
+    tempRequestPending = false;
+    lastTempRead = now;  // زمان آخرین خواندن موفق
   }
 }
 
@@ -312,17 +319,18 @@ int getStopMinutes()
 
 bool isInsideSchedule()
 {
-  int nowM = getMinutesNow();
-
-  if (nowM < 0)
-  {
-    return false;
-  }
-
-  return
-      nowM >= getStartMinutes()
-      &&
-      nowM < getStopMinutes();
+    int nowM = getMinutesNow();
+    if (nowM < 0) return false;
+    
+    int startM = getStartMinutes();
+    int stopM = getStopMinutes();
+    
+    if (startM < stopM) {
+     
+        return (nowM >= startM && nowM < stopM);
+    } else {
+        return (nowM >= startM || nowM < stopM);
+    }
 }
 
 // -------------------- WIFI --------------------
@@ -364,46 +372,48 @@ void syncBackupServers()
 }
 
 // -------------------- BOOT CHECK --------------------
-
 void restoreScheduleState()
 {
-  if (!settings.scheduleEnabled)
-  {
-    return;
-  }
+    if (!settings.scheduleEnabled || settings.autoEnabled)
+        return;
 
-  if (!isInsideSchedule())
-  {
-    return;
-  }
+    int nowM = getMinutesNow();
+    if (nowM < 0) return;
 
-  int nowM = getMinutesNow();
+    int startM = getStartMinutes();
+    int stopM = getStopMinutes();
+    
+    bool isInside = false;
+    int passedMinutes = 0;
 
-  int startM = getStartMinutes();
+    if (startM < stopM) {
+        if (nowM >= startM && nowM < stopM) {
+            isInside = true;
+            passedMinutes = nowM - startM;
+        }
+    } else {
+        if (nowM >= startM || nowM < stopM) {
+            isInside = true;
+            if (nowM >= startM)
+                passedMinutes = nowM - startM;
+            else
+                passedMinutes = (1440 - startM) + nowM;
+        }
+    }
 
-  int passed = nowM - startM;
+    if (!isInside) return;
 
-  if (passed >= 15)
-  {
-    relayPump(true);
-    relaySlow(true);
-
-    scheduleState =
-        SCH_RUNNING;
-  }
-  else
-  {
-    relayPump(true);
-
-    schedulePumpStartMillis =
-        millis() -
-        (passed * 60000UL);
-
-    scheduleState =
-        SCH_PUMPING;
-  }
+    if (passedMinutes >= 15) {
+        relayPump(true);
+        relaySlow(true);
+        scheduleState = SCH_RUNNING;
+    } else {
+        relayPump(true);
+        unsigned long remainingMillis = (15 - passedMinutes) * 60000UL;
+        schedulePumpEndTime = millis() + remainingMillis; 
+        scheduleState = SCH_PUMPING;
+    }
 }
-
 //
 // =====================================================
 // AUTO ENGINE
@@ -581,68 +591,16 @@ void processSchedule()
 
       break;
 
-    case SCH_PUMPING:
-
-      if (passedMinutes >= 15)
-      {
+case SCH_PUMPING:
+    if (millis() >= schedulePumpEndTime) {
         scheduleStartCooling();
-      }
-      else
-      {
-        if (
-            millis() -
-            schedulePumpStartMillis
-            >= PUMP_PREWET_TIME)
-        {
-          scheduleStartCooling();
-        }
-      }
-
-      break;
+    }
+    break;
 
     case SCH_RUNNING:
 
       break;
   }
-}
-
-//
-// =====================================================
-// STATUS JSON
-// =====================================================
-//
-
-String getStatusJson()
-{
-  String json = "{";
-
-  json += "\"temp\":";
-  json += String(currentTemp,1);
-
-  json += ",\"pump\":";
-  json += (pumpState ? "true":"false");
-
-  json += ",\"slow\":";
-  json += (slowState ? "true":"false");
-
-  json += ",\"fast\":";
-  json += (fastState ? "true":"false");
-
-  json += ",\"autoEnabled\":";
-  json +=
-      (settings.autoEnabled
-       ? "true"
-       : "false");
-
-  json += ",\"scheduleEnabled\":";
-  json +=
-      (settings.scheduleEnabled
-       ? "true"
-       : "false");
-
-  json += "}";
-
-  return json;
 }
 
 //
@@ -676,6 +634,21 @@ String getClockString()
 // ROUTE HELPERS
 // =====================================================
 //
+
+void handleIcon()
+{
+  File f = LittleFS.open("/icon.png","r");
+
+  if(!f)
+  {
+    server.send(404);
+    return;
+  }
+
+  server.streamFile(f,"image/png");
+
+  f.close();
+}
 
 void handlePumpOn()
 {
@@ -813,7 +786,22 @@ const char MAIN_PAGE[] PROGMEM = R"rawliteral(
 <head>
 
 <meta charset="utf-8">
+<link rel="manifest" href="/manifest.json">
 
+<meta name="theme-color"
+content="#0f172a">
+
+<meta name="mobile-web-app-capable"
+content="yes">
+
+<meta name="apple-mobile-web-app-capable"
+content="yes">
+
+<meta name="apple-mobile-web-app-status-bar-style"
+content="black-translucent">
+
+<meta name="apple-mobile-web-app-title"
+content="Smart Cooler">
 <meta name="viewport"
 content="width=device-width,initial-scale=1">
 
@@ -913,6 +901,10 @@ body
 .auto
 {
  background:var(--blue);
+}
+.schedule
+{
+  background: var(--blue);
 }
 
 .section
@@ -1018,6 +1010,9 @@ class="btn"
 id="autoBtn">
 Auto
 </a>
+
+  <a href="/schedule/on" class="btn" id="scheduleBtn">Schedule</a>
+
 
 </div>
 
@@ -1135,7 +1130,7 @@ function updateButton(
   id,
   state,
   onUrl,
-  offUrl)
+  offUrl) 
 {
   let btn =
     document.getElementById(id);
@@ -1200,6 +1195,12 @@ async function refreshData()
       j.autoEnabled,
       "/auto/on",
       "/auto/off");
+      
+        updateButton(
+  "scheduleBtn",
+  j.scheduleEnabled,
+  "/schedule/on",
+  "/schedule/off");
 
     let txt = "";
 
@@ -1303,7 +1304,11 @@ void handleStatus()
   json += (settings.scheduleEnabled ? "true" : "false");
 
   json += "}";
-
+  
+server.sendHeader(
+  "Cache-Control",
+  "no-store"
+);
   server.send(
       200,
       "application/json",
@@ -1388,6 +1393,13 @@ void handleSaveSchedule()
 
 void initRoutes()
 {
+  server.on("/icon.png", handleIcon);
+  
+  server.on(
+  "/manifest.json",
+  handleManifest
+);
+
   server.on(
       "/",
       handleRoot);
@@ -1458,6 +1470,32 @@ void initOTA()
       "/update");
 }
 
+
+void handleManifest()
+{
+  String json = R"({
+    "name":"Smart Cooler",
+    "short_name":"Cooler",
+    "start_url":"/",
+    "display":"standalone",
+    "background_color":"#0f172a",
+    "theme_color":"#0f172a",
+    "icons":[
+{
+  "src":"/icon.png",
+  "sizes":"192x192",
+  "type":"image/png"
+}
+]
+  })";
+
+  server.send(
+    200,
+    "application/manifest+json",
+    json
+  );
+}
+
 //
 // =====================================================
 // SETUP
@@ -1467,7 +1505,8 @@ void initOTA()
 void setup()
 {
   Serial.begin(115200);
-
+  LittleFS.begin();
+  
   pinMode(
       PIN_PUMP,
       OUTPUT);
@@ -1485,12 +1524,15 @@ void setup()
   loadSettings();
 
   sensors.begin();
+sensors.setWaitForConversion(false);
 
   connectWiFi();
-
+  
+  MDNS.begin("cooler");
+  
   initTime();
 
-  delay(3000);
+  delay(10000);
 
   initRoutes();
 
@@ -1516,7 +1558,9 @@ void setup()
 void loop()
 {
   server.handleClient();
-
+  
+  MDNS.update();
+  
   updateTemperature();
 
   processAuto();
